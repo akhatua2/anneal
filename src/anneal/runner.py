@@ -1,7 +1,8 @@
-"""Runner: orchestrates coder -> reviewer -> coder revision loops in docker containers."""
+"""Runner: orchestrates coder -> reviewer -> coder revision loops."""
 
 import base64
 import logging
+import time
 from pathlib import Path
 
 from anneal.agents.factory import make_coder, make_reviewer
@@ -90,7 +91,7 @@ class Runner:
         save_text(content, self._learnings_path(role))
 
     def _save_trajectory(self, agent, issue_dir: Path, round_num: int, role: str) -> str:
-        traj_path = issue_dir / f"round_{round_num}" / f"{role}_trajectory.json"
+        traj_path = issue_dir / f"round_{round_num}" / role / "trajectory.json"
         agent.save(traj_path)
         return str(traj_path)
 
@@ -98,7 +99,14 @@ class Runner:
         trace = Trace(issue=issue)
         review_feedback = ""
         issue_slug = issue_id or str(int(trace.timestamp))
-        issue_dir = self.output_dir / issue_slug
+        ts = time.strftime("%Y%m%d_%H%M%S")
+        issue_dir = self.output_dir / issue_slug / ts
+
+        # Per-run log file
+        issue_dir.mkdir(parents=True, exist_ok=True)
+        fh = logging.FileHandler(issue_dir / "run.log")
+        fh.setFormatter(logging.Formatter("%(asctime)s %(name)s %(levelname)s %(message)s"))
+        logging.getLogger().addHandler(fh)
 
         # Load persistent learnings (separate per role)
         coder_learnings = self._load_learnings("coder")
@@ -148,14 +156,15 @@ class Runner:
                     patch = ""
 
                 # Read back coder's learnings and notes, save to disk
+                coder_dir = round_dir / "coder"
                 coder_learnings = _read_file_from_container(coder_env, LEARNINGS_PATH)
                 self._save_learnings("coder", coder_learnings)
-                save_text(coder_learnings, round_dir / "coder_learnings.txt")
-                save_text(_read_file_from_container(coder_env, TASK_NOTES_PATH), round_dir / "coder_task_notes.txt")
+                save_text(coder_learnings, coder_dir / "learnings.txt")
+                save_text(_read_file_from_container(coder_env, TASK_NOTES_PATH), coder_dir / "task_notes.txt")
 
                 # Save coder outputs immediately
                 coder_traj_path = self._save_trajectory(coder, issue_dir, round_num, "coder")
-                save_text(patch, round_dir / "patch.txt")
+                save_text(patch, coder_dir / "patch.txt")
 
                 pr_attempt = PRAttempt(patch=patch, coder_trajectory=coder_traj_path)
 
@@ -177,6 +186,8 @@ class Runner:
                 # Write patch into reviewer's container
                 reviewer_env.execute({"command": f"cat << 'PATCH_EOF' > /tmp/patch.txt\n{patch}\nPATCH_EOF"})
 
+                reviewer_dir = round_dir / "reviewer"
+
                 try:
                     result = reviewer.run(task=issue)
                     review_text = result.get("submission", "")
@@ -191,11 +202,9 @@ class Runner:
                 # Read back reviewer's learnings and notes, save to disk
                 reviewer_learnings = _read_file_from_container(reviewer_env, LEARNINGS_PATH)
                 self._save_learnings("reviewer", reviewer_learnings)
-                save_text(reviewer_learnings, round_dir / "reviewer_learnings.txt")
-                save_text(_read_file_from_container(reviewer_env, TASK_NOTES_PATH), round_dir / "reviewer_task_notes.txt")
-
-                # Save review immediately
-                save_text(review_text, round_dir / "review.txt")
+                save_text(reviewer_learnings, reviewer_dir / "learnings.txt")
+                save_text(_read_file_from_container(reviewer_env, TASK_NOTES_PATH), reviewer_dir / "task_notes.txt")
+                save_text(review_text, reviewer_dir / "review.txt")
 
                 review = Review(verdict=verdict, reviewer_trajectory=reviewer_traj_path)
                 trace.rounds.append((pr_attempt, review))
@@ -223,4 +232,6 @@ class Runner:
         save_trace(trace, issue_dir)
         save_text(trace.final_patch, issue_dir / "final.patch")
         logger.info(f"Done. Rounds: {len(trace.rounds)}, Approved: {trace.outcome.reviewer_approved}")
+        logging.getLogger().removeHandler(fh)
+        fh.close()
         return trace
