@@ -19,6 +19,112 @@ Five islands optimize for different objectives: first-try success, cost efficien
 ## Architecture
 
 ```
+                            OUTER LOOP (Supervisor)
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                                                                         │
+  │   ┌──────────┐    ┌──────────────────────────────────────────────────┐  │
+  │   │  PROPOSE  │    │              ISLAND POOL                        │  │
+  │   │           │    │                                                  │  │
+  │   │ LLM reads │    │  ┌────────────┐ ┌────────────┐ ┌────────────┐  │  │
+  │   │ elite +   │◄───┤  │ first_try  │ │ efficiency │ │ feedback   │  │  │
+  │   │ eval      │    │  │            │ │            │ │ _quality   │  │  │
+  │   │ feedback, │    │  │ elite_0    │ │ elite_0    │ │ elite_0    │  │  │
+  │   │ mutates   │    │  │ elite_1    │ │ elite_1    │ │ elite_1    │  │  │
+  │   │ prompts   │    │  │ elite_2    │ │ elite_2    │ │ elite_2    │  │  │
+  │   └─────┬─────┘    │  └─────┬──────┘ └──────┬─────┘ └─────┬──────┘  │  │
+  │         │          │        │                │             │          │  │
+  │         │          │  ┌─────┴──────┐ ┌──────┴─────┐ ┌─────┴──────┐  │  │
+  │         │          │  │correctness │ │adversarial │ │            │  │  │
+  │         │          │  │            │ │ _reviewer  │ │  MIGRATE   │  │  │
+  │         │          │  │ elite_0    │ │ elite_0    │ │ every 2    │  │  │
+  │         │          │  │ elite_1    │ │ elite_1    │ │ generations│  │  │
+  │         │          │  │ elite_2    │ │ elite_2    │ │  ◄──────►  │  │  │
+  │         │          │  └────────────┘ └────────────┘ └────────────┘  │  │
+  │         │          └──────────────────────────────────────────────────┘  │
+  │         │                                          ▲                    │
+  │         ▼                                          │                    │
+  │   ┌──────────┐         ┌──────────┐         ┌─────┴────┐              │
+  │   │ ROLLOUT  │────────►│ EVALUATE │────────►│  SELECT  │              │
+  │   │          │         │          │         │          │              │
+  │   │ N variant│         │ LLM judge│         │ best     │              │
+  │   │ x M tasks│         │ scores   │         │ variant  │              │
+  │   │ parallel │         │ each     │         │ replaces │              │
+  │   │ on Modal │         │ trace    │         │ worst    │              │
+  │   └──────────┘         └──────────┘         │ elite    │              │
+  │         │                                    └──────────┘              │
+  │         │                                                              │
+  └─────────┼──────────────────────────────────────────────────────────────┘
+            │
+            │  Each rollout runs the inner loop:
+            ▼
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                         INNER LOOP (Runner)                             │
+  │                                                                         │
+  │   ┌──────────────┐                          ┌──────────────┐           │
+  │   │  CODER       │    /tmp/patch.txt        │  REVIEWER    │           │
+  │   │  (Opus)      │ ──────────────────────►  │  (Sonnet)    │           │
+  │   │              │                          │              │           │
+  │   │  reads issue │                          │  reads diff  │           │
+  │   │  explores    │    VERDICT: ACCEPT       │  checks:     │           │
+  │   │  codes fix   │ ◄────────────────────    │  correctness │           │
+  │   │  writes tests│    or REQUEST_CHANGES    │  minimalism  │           │
+  │   │              │    + line comments        │  style       │           │
+  │   └──────┬───────┘                          │  tests       │           │
+  │          │                                  └──────┬───────┘           │
+  │          │                                         │                   │
+  │          │         ┌────────────────────┐          │                   │
+  │          │         │   MEMORY FILES     │          │                   │
+  │          └────────►│                    │◄─────────┘                   │
+  │                    │  repo_learnings.txt│                              │
+  │                    │  (cross-task)      │                              │
+  │                    │                    │                              │
+  │                    │  task_notes.txt    │                              │
+  │                    │  (per-task)        │                              │
+  │                    └────────────────────┘                              │
+  │                                                                         │
+  │   Iterates until ACCEPT or max rounds (10)                             │
+  │   Runs inside SWE-bench Docker image on Modal                          │
+  └─────────────────────────────────────────────────────────────────────────┘
+
+
+  EVOLUTION FLOW (per generation):
+
+  Generation N
+  ─────────────────────────────────────────────────────────────────────
+
+  5 islands x 4 variants x 4 tasks = 80 parallel rollouts
+
+       Island 1          Island 2          Island 3          Island 4          Island 5
+    ┌───────────┐     ┌───────────┐     ┌───────────┐     ┌───────────┐     ┌───────────┐
+    │ first_try │     │ efficiency│     │ feedback  │     │correctness│     │adversarial│
+    │           │     │           │     │ _quality  │     │           │     │ _reviewer │
+    │ propose 4 │     │ propose 4 │     │ propose 4 │     │ propose 4 │     │ propose 4 │
+    │ variants  │     │ variants  │     │ variants  │     │ variants  │     │ variants  │
+    └─────┬─────┘     └─────┬─────┘     └─────┬─────┘     └─────┬─────┘     └─────┬─────┘
+          │                 │                 │                 │                 │
+          └────────┬────────┴────────┬────────┴────────┬───────┴────────┬────────┘
+                   │                 │                 │                │
+                   ▼                 ▼                 ▼                ▼
+            ┌─────────────────────────────────────────────────────────────────┐
+            │              80 ROLLOUTS IN PARALLEL (Modal)                    │
+            │                                                                 │
+            │   variant_0 x task_0    variant_0 x task_1    ...              │
+            │   variant_1 x task_0    variant_1 x task_1    ...              │
+            │   ...                                                          │
+            └─────────────────────────────────────────────────────────────────┘
+                   │                 │                 │                │
+                   ▼                 ▼                 ▼                ▼
+            ┌───────────┐     ┌───────────┐     ┌───────────┐     ┌───────────┐
+            │  evaluate │     │  evaluate │     │  evaluate │     │  evaluate │
+            │  + select │     │  + select │     │  + select │     │  + select │
+            └───────────┘     └───────────┘     └───────────┘     └───────────┘
+
+  Every 2 generations: MIGRATE best elites across islands
+```
+
+### File structure
+
+```
 src/anneal/
 ├── runner.py                  # Inner loop: coder <-> reviewer iteration
 ├── agents/
