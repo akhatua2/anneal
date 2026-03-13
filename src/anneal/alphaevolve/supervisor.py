@@ -36,6 +36,7 @@ DEFAULT_ISLANDS = [
             "cost": -0.1,
             "steps": -0.01,
         },
+        mutable="coder",
     ),
     IslandConfig(
         name="efficiency",
@@ -83,6 +84,7 @@ DEFAULT_ISLANDS = [
             "cost": 0.0,
             "steps": 0.0,
         },
+        mutable="coder",
     ),
     IslandConfig(
         name="adversarial_reviewer",
@@ -100,6 +102,7 @@ DEFAULT_ISLANDS = [
             "cost": -0.1,
             "steps": -0.01,
         },
+        mutable="reviewer",
     ),
 ]
 
@@ -129,8 +132,8 @@ class Supervisor:
         max_workers: int = 20,
         max_elites: int = 3,
         migrate_every: int = 2,
-        propose_model: str = "anthropic/claude-opus-4-6",
-        judge_model: str = "anthropic/claude-opus-4-6",
+        propose_model: str = "anthropic/claude-sonnet-4-6",
+        judge_model: str = "anthropic/claude-sonnet-4-6",
     ):
         self.task_pool = task_pool
         self.experiments_dir = Path(experiments_dir)
@@ -209,7 +212,7 @@ class Supervisor:
         return random.sample(self.task_pool, self.tasks_per_gen)
 
     def _propose_for_island(self, island: Island, tasks: list[TaskConfig]):
-        """Propose variants for one island. Returns (island, elite, variants, gen_dir)."""
+        """Propose variants for one island. Returns (island, elite, variants, gen_dir) or None on failure."""
         island.generation += 1
         gen_dir = island.gen_dir()
         gen_dir.mkdir(parents=True, exist_ok=True)
@@ -220,13 +223,16 @@ class Supervisor:
             f"elite fitness={elite.fitness:.3f}"
         )
 
-        variants = propose(
-            elite, island.config, gen_dir,
-            n_variants=self.n_variants, model=self.propose_model,
-        )
-        logger.info(f"Island '{island.config.name}': proposed {[v.name for v in variants]}")
-
-        return island, elite, variants, gen_dir
+        try:
+            variants = propose(
+                elite, island.config, gen_dir,
+                n_variants=self.n_variants, model=self.propose_model,
+            )
+            logger.info(f"Island '{island.config.name}': proposed {[v.name for v in variants]}")
+            return island, elite, variants, gen_dir
+        except Exception as e:
+            logger.error(f"Island '{island.config.name}': propose failed, skipping this generation: {e}")
+            return None
 
     def _select_for_island(self, island, variants, gen_dir) -> dict:
         """Evaluate variants and select winner for one island."""
@@ -278,7 +284,15 @@ class Supervisor:
                     for island in self.islands
                 }
                 for f in concurrent.futures.as_completed(futures):
-                    island_plans.append(f.result())
+                    result = f.result()
+                    if result is not None:
+                        island_plans.append(result)
+
+            if not island_plans:
+                logger.error("All islands failed to propose. Skipping generation.")
+                continue
+
+            logger.info(f"Phase 1 complete: {len(island_plans)}/{len(self.islands)} islands proposed successfully")
 
             # Phase 2: ROLLOUT — collect ALL jobs, run in one big parallel batch
             logger.info("Phase 2: Running all rollouts in parallel...")
@@ -317,14 +331,17 @@ class Supervisor:
             # Phase 3: EVALUATE + SELECT — per island
             logger.info("Phase 3: Evaluating and selecting...")
             for island, elite, variants, gen_dir in island_plans:
-                result = self._select_for_island(island, variants, gen_dir)
-                all_results.append(result)
-                logger.info(
-                    f"Island '{island.config.name}' gen {island.generation}: "
-                    f"selected={result['selected']} "
-                    f"fitness={result['selected_fitness']:.3f} "
-                    f"updated={result['elite_updated']}"
-                )
+                try:
+                    result = self._select_for_island(island, variants, gen_dir)
+                    all_results.append(result)
+                    logger.info(
+                        f"Island '{island.config.name}' gen {island.generation}: "
+                        f"selected={result['selected']} "
+                        f"fitness={result['selected_fitness']:.3f} "
+                        f"updated={result['elite_updated']}"
+                    )
+                except Exception as e:
+                    logger.error(f"Island '{island.config.name}': evaluate/select failed: {e}")
 
             if gen % self.migrate_every == 0:
                 logger.info("Migrating elites between islands...")

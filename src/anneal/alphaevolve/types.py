@@ -59,6 +59,7 @@ class IslandConfig:
     name: str
     objective: str
     weights: dict[str, float]
+    mutable: str = "both"  # "coder", "reviewer", or "both"
 
 
 @dataclass

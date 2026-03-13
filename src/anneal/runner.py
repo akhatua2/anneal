@@ -57,7 +57,7 @@ class Runner:
         self,
         image: str,
         *,
-        max_rounds: int = 3,
+        max_rounds: int = 10,
         repo_slug: str = "",
         coder_config: str | None = None,
         reviewer_config: str | None = None,
