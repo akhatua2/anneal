@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Quick test: run the coder->reviewer loop on a SWE-bench instance."""
+"""Run the coder->reviewer loop on a task."""
 
 import logging
-from datasets import load_dataset
+import sys
+from pathlib import Path
+
 from anneal.runner import Runner
 
 logging.basicConfig(
@@ -10,30 +12,34 @@ logging.basicConfig(
     format="%(asctime)s %(name)s %(levelname)s %(message)s",
 )
 
-INSTANCE_ID = "pytest-dev__pytest-10051"
+TASKS_DIR = Path("tasks")
+IMAGE = "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-10051:latest"
 
-# Load instance from HuggingFace
-ds = load_dataset("princeton-nlp/SWE-bench_Verified", split="test")
-instance = next(r for r in ds if r["instance_id"] == INSTANCE_ID)
+# Pick task from CLI arg or default
+task_name = sys.argv[1] if len(sys.argv) > 1 else "caplog-assert-logged"
+task_file = TASKS_DIR / f"{task_name}.md"
 
-# Get image name
-iid = instance["instance_id"].replace("__", "_1776_")
-image = f"swebench/sweb.eval.x86_64.{iid}:latest".lower()
+if not task_file.exists():
+    available = [f.stem for f in TASKS_DIR.glob("*.md")]
+    print(f"Task '{task_name}' not found. Available: {available}")
+    sys.exit(1)
 
-print(f"Instance: {INSTANCE_ID}")
-print(f"Image:    {image}")
-print(f"Issue:    {instance['problem_statement'][:200]}...")
+issue = task_file.read_text()
+
+print(f"Task:  {task_name}")
+print(f"Image: {IMAGE}")
+print(f"Issue: {issue[:200]}...")
 print()
 
 runner = Runner(
-    image=image,
-    max_rounds=2,
+    image=IMAGE,
+    max_rounds=10,
     repo_slug="pytest-dev__pytest",
-    output_dir="output/swebench_test",
+    output_dir="output/features",
     memory_dir="memory",
 )
 
-trace = runner.run(issue=instance["problem_statement"], issue_id=INSTANCE_ID)
+trace = runner.run(issue=issue, issue_id=task_name)
 
 print(f"\n{'='*60}")
 print(f"Rounds:   {len(trace.rounds)}")

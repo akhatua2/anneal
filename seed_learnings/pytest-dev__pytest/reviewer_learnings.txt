@@ -1,0 +1,47 @@
+# Pytest Codebase — Reviewer Learnings
+
+## Code Conventions to Enforce
+- Type annotations use `typing` module (List, Dict, Optional, Union, Tuple) — NOT Python 3.10+ builtins (list, dict, etc). This repo targets 3.7+.
+- Two blank lines between top-level definitions (functions, classes). One blank line between methods.
+- Imports ordered: stdlib → third-party → _pytest internals. No blank lines within groups.
+- Docstrings use reStructuredText format (:param str when:, :returns:, :rtype:, .. versionadded::).
+- Internal-only APIs use `_ispytest` parameter pattern (check_ispytest() guard).
+- No trailing whitespace. No debug prints. No TODO comments.
+
+## Architectural Patterns to Check
+- LogCaptureHandler.reset() creates a NEW list (self.records = []). Any fix that clears in place (self.records.clear()) vs replacing must consider whether other references (item.stash) need updating.
+- StashKey instances must be module-level globals, not created inside functions.
+- When adding new StashKeys, they MUST be cleaned up in pytest_runtest_teardown alongside existing ones (del item.stash[key]).
+- Hook implementations need @hookimpl decorator. Check hookwrapper vs regular.
+- New markers must be registered in pytest_configure() via config.addinivalue_line("markers", ...).
+- New plugins/features should be added to essential_plugins in src/_pytest/config/__init__.py.
+
+## Test Quality Checklist
+- Tests should be in the correct test file (logging tests in testing/logging/test_fixture.py, etc).
+- Prefer direct fixture usage (def test_foo(caplog):) for simple cases.
+- Use pytester fixture for tests that need to run pytest itself in a subprocess.
+- Tests must actually verify the fix — not just run without errors. Check for specific assertions.
+- Edge cases to look for: empty state, after clear(), interaction between phases (setup/call/teardown).
+- Tests should pass independently (no ordering dependency with other tests).
+
+## Common AI Coder Anti-Patterns to Flag
+- Adding speculative error handling (try/except) that can't actually trigger.
+- Adding unnecessary type checks or validation for internal APIs.
+- Adding comments that restate the code ("# Clear the records" above records.clear()).
+- Importing modules not used in the change.
+- Modifying unrelated code (formatting fixes, docstring additions outside the changed area).
+- Not cleaning up new StashKeys in teardown (incomplete lifecycle management).
+- Using list replacement when list mutation is needed (or vice versa) — verify which semantics are correct.
+
+## Review Process
+- Read the full patch first, understand the approach before evaluating details.
+- Apply the patch and run the coder's tests to verify they pass.
+- Run broader test suite (pytest testing/logging/ -x -q or relevant module) to check for regressions.
+- Check: does the test actually fail without the fix? (git stash, run test, git stash pop).
+- Verify test covers the exact bug scenario from the issue, not just a happy path.
+
+## Repo-Specific Notes
+- Python 3.11.5 in the container.
+- pytest not on PATH by default — must pip install -e . first.
+- Git baseline has an "SWE-bench" commit on top — this is expected, not the coder's work.
+- testing/conftest.py has a pytest_collection_modifyitems hook that reorders tests — don't be confused by test execution order.

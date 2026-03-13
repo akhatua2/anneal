@@ -1,0 +1,11 @@
+VERDICT: REQUEST_CHANGES
+
+CORRECTNESS: PASS — The fix correctly re-syncs `caplog_records_key` with the handler's new records list after `clear()` calls `handler.reset()`, which replaces the list.
+MINIMALISM: FAIL — Missing cleanup of `caplog_when_key` in teardown, which is needed for consistency; otherwise the approach is minimal and necessary.
+STYLE: PASS — Follows the existing codebase conventions for StashKey usage, naming, and placement.
+HYGIENE: PASS — No stray comments, debug prints, or TODOs.
+ARCHITECTURAL_FIT: PASS — Using a StashKey to track the current phase is consistent with how caplog_handler_key and caplog_records_key are used.
+TEST_QUALITY: PASS — Test covers the exact bug scenario from the issue: logging, clear, then verifying get_records stays consistent with records. Also tests that new records after clear are captured correctly.
+
+COMMENTS:
+- [src/_pytest/logging.py:731] `caplog_when_key` is not cleaned up in `pytest_runtest_teardown` alongside `caplog_records_key` and `caplog_handler_key`. Add `del item.stash[caplog_when_key]` here for consistency with the existing cleanup pattern. While the stash is per-item and gets GC'd anyway, the existing code explicitly cleans up the other two keys, so this new key should follow the same pattern.

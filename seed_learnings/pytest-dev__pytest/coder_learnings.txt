@@ -1,0 +1,59 @@
+# Pytest Codebase — Coder Learnings
+
+## Repo Structure
+- Source code: src/_pytest/
+- Tests: testing/ (mirrors source structure)
+- Logging tests: testing/logging/test_fixture.py, test_formatter.py, test_reporting.py
+- Python API tests (raises, approx): testing/test_python_api.py (but NOTE: tests don't run from this file directly, use pytester-based tests)
+- Mark tests: testing/test_mark.py
+- Runner/hooks tests: testing/test_runner.py
+- Config tests: testing/test_config.py
+
+## Running Tests
+- pytest is NOT on PATH by default. First: `cd /testbed && pip install -e . -q`
+- Then: `pytest testing/logging/test_fixture.py -x -q`
+- Run specific test: `pytest testing/logging/test_fixture.py::test_clear -x -q`
+- Python 3.11.5 in the container
+
+## Key Source Files
+- src/_pytest/logging.py — LogCaptureFixture (caplog), LogCaptureHandler, LoggingPlugin
+- src/_pytest/python_api.py — RaisesContext, approx, warns
+- src/_pytest/recwarn.py — WarningsChecker (pytest.warns)
+- src/_pytest/skipping.py — skip, xfail markers (good pattern for new markers)
+- src/_pytest/runner.py — pytest_runtest_protocol, call_and_report, CallInfo
+- src/_pytest/fixtures.py — FixtureRequest, FixtureDef, FixtureManager
+- src/_pytest/config/__init__.py — marker registration via config.addinivalue_line("markers", ...)
+- src/_pytest/mark/ — mark system (__init__.py, structures.py, expression.py)
+- src/_pytest/stash.py — StashKey[T], Stash (typed per-item storage)
+
+## Key Patterns
+- Fixtures defined as @pytest.fixture in source, yielded to tests
+- LogCaptureHandler.reset() creates NEW list (self.records = []), does NOT clear in place
+- Phase management: _runtest_for() sets item.stash[caplog_records_key][when] = handler.records
+- Markers registered in pytest_configure() via config.addinivalue_line("markers", "name: description")
+- Hook implementations use @hookimpl decorator (from _pytest.config import hookimpl)
+- New plugins registered in src/_pytest/config/__init__.py (in the essential_plugins list)
+- RaisesContext.__exit__ uses issubclass() check — match= param uses re.compile().search()
+- WarningsChecker follows similar pattern to RaisesContext
+
+## Code Style
+- Imports: stdlib first, then _pytest internals
+- Type annotations: use typing module (List, Dict, Optional, Union, Tuple — not builtins)
+- Two blank lines between top-level definitions (classes, functions)
+- Single blank line between methods within a class
+- Docstrings use reStructuredText (:param:, :returns:, :rtype:, .. versionadded::)
+- No trailing whitespace
+- Internal APIs use _ispytest=True pattern for access control
+
+## Test Patterns
+- Most tests use fixtures directly (def test_foo(caplog):)
+- Complex tests use pytester fixture (def test_foo(pytester):) which runs pytest in subprocess
+- pytester.makepyfile() creates test files, pytester.runpytest() runs them
+- Assertions use plain assert, no unittest-style self.assertEqual
+- Test function names: test_<descriptive_name>, no Test classes for simple cases
+
+## Common Pitfalls
+- handler.reset() replaces the records list — if something holds a reference to the old list, it diverges
+- StashKey instances must be at module level (global), not created per-call
+- When adding cleanup in teardown hooks, match the pattern of existing del item.stash[key] calls
+- pytest must be pip installed before running tests (not on PATH by default)

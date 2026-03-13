@@ -4,7 +4,9 @@
       "Bash(uv init:*)",
       "Bash(uv add:*)",
       "Bash(gh repo:*)",
-      "Bash(source /Users/arpan/Desktop/anneal/.env && .venv/bin/python -c \"\nfrom litellm import completion\nresp = completion\\(model='claude-haiku-4-5-20251001', messages=[{'role':'user','content':'Say hi'}], max_tokens=10\\)\nprint\\(resp.choices[0].message.content\\)\n\" 2>&1)"
+      "Bash(source /Users/arpan/Desktop/anneal/.env && .venv/bin/python -c \"\nfrom litellm import completion\nresp = completion\\(model='claude-haiku-4-5-20251001', messages=[{'role':'user','content':'Say hi'}], max_tokens=10\\)\nprint\\(resp.choices[0].message.content\\)\n\" 2>&1)",
+      "Bash(docker exec:*)",
+      "Bash(kill 68536 68533)"
     ]
   }
 }

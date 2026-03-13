@@ -1,0 +1,18 @@
+# Task: Fix caplog.get_records and caplog.clear conflict
+
+## Problem
+- `caplog.get_records()` returns list from `item.stash[caplog_records_key][when]`
+- `caplog.records` returns `handler.records` 
+- Both initially point to same list (set in `_runtest_for`)
+- `caplog.clear()` calls `handler.reset()` which does `self.records = []` (new list)
+- This decouples the stash reference from the handler reference
+
+## Solution
+1. Added `caplog_when_key` StashKey to track current test phase
+2. Set it in `_runtest_for` alongside existing stash updates
+3. In `clear()`, after `handler.reset()`, update the stash entry to point to the new records list
+
+## Why not just clear in-place in reset()?
+- `reset()` is also called at the start of each phase in `_runtest_for`
+- If we clear in-place there, it would wipe the previous phase's records too
+- The previous phase's stash entry still points to the same list

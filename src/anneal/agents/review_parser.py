@@ -8,5 +8,5 @@ def parse_verdict(submission: str) -> dict:
     """
     return {
         "raw": submission.strip(),
-        "approved": "VERDICT: APPROVE" in submission,
+        "approved": "VERDICT: ACCEPT" in submission,
     }

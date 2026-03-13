@@ -1,0 +1,1326 @@
+{
+  "info": {
+    "model_stats": {
+      "instance_cost": 0.15483299999999997,
+      "api_calls": 12
+    },
+    "config": {
+      "agent": {
+        "system_template": "You are a software engineer tasked with resolving issues in a codebase.\n\nYou produce minimal, clean diffs. You do NOT:\n- Add unnecessary comments, docstrings, or logging\n- Refactor code beyond what the issue requires\n- Add speculative error handling or feature flags\n- Leave debug prints or TODOs behind\n\nYou DO:\n- Read existing code before changing it\n- Match the repo's naming conventions, formatting, and patterns\n- Change only what is needed to fix the issue\n- Verify your fix works before submitting\n\n{% if skill_docs -%}\n## Learned Guidelines\n{{ skill_docs }}\n{% endif -%}\n",
+        "instance_template": "Please fix this issue: {{task}}\n\nYou can execute bash commands and edit files to implement the necessary changes.\n\n## Workflow\n\n1. Read the relevant files to understand the codebase and the issue\n2. Write a minimal fix\n3. Write tests that verify your fix (edge cases, regression tests)\n4. Run your tests to confirm they pass\n5. Submit your changes as a patch\n\n## Command Execution Rules\n\nEach response should include:\n\n1. **Reasoning text** where you explain your analysis and plan\n2. At least one bash tool call with your command\n\n**CRITICAL REQUIREMENTS:**\n\n- Your response MUST include AT LEAST ONE bash tool call\n- Directory or environment variable changes are not persistent (new subshell each time)\n- Prefix commands with `cd /testbed && ...` as needed\n\n## Submission\n\nWhen done, submit your changes as a git patch. Follow these steps IN ORDER with SEPARATE commands:\n\nStep 1: Create the patch\n`cd /testbed && git diff -- path/to/file1 path/to/file2 path/to/test_file > /tmp/patch.txt`\nInclude both your source fix AND any tests you wrote. Do NOT commit.\n\n<IMPORTANT>\nDo not include helper tools, config files, or binaries in the patch.\n</IMPORTANT>\n\nStep 2: Verify\nInspect /tmp/patch.txt \u2014 headers should show `--- a/` and `+++ b/` paths.\n\nStep 3: Submit (EXACT command)\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat /tmp/patch.txt\n```\n\n<CRITICAL>\nCreating the patch and submitting MUST be separate commands.\nYou CANNOT continue working after submitting.\n</CRITICAL>\n\n## Learnings & Notes\n\nTwo files are available in your environment for maintaining knowledge:\n\n**`/tmp/repo_learnings.txt`** \u2014 Shared codebase knowledge that persists across tasks.\nRead this FIRST before exploring. It may contain info from previous sessions:\nrepo structure, naming conventions, test patterns, common pitfalls, what the\nreviewer typically cares about. Before submitting, UPDATE this file with anything\nyou learned about the codebase that would help on future tasks. Keep it concise\nand organized. Remove anything you find to be wrong. Rewrite the whole file, don't\njust append.\n\n**`/tmp/task_notes.txt`** \u2014 Your scratch notes for this specific task.\nPersists across revision rounds. Use it to track: what you explored, what you\ntried, what failed and why, key file locations. On later rounds this will contain\nyour notes from previous attempts \u2014 read it to avoid repeating mistakes.\nBefore submitting, update it with what you learned this round.\n\n{% if review_feedback -%}\n## Review Feedback (from previous attempt)\nThe reviewer requested changes. Address ALL of the following:\n\n{{ review_feedback }}\n{% endif -%}\n",
+        "step_limit": 100,
+        "cost_limit": 2.0,
+        "output_path": null
+      },
+      "agent_type": "minisweagent.agents.default.DefaultAgent",
+      "model": {
+        "model_name": "anthropic/claude-opus-4-6",
+        "model_kwargs": {
+          "drop_params": true
+        },
+        "litellm_model_registry": null,
+        "set_cache_control": "default_end",
+        "cost_tracking": "ignore_errors",
+        "format_error_template": "{{ error }}",
+        "observation_template": "{% if output.exception_info %}<exception>{{output.exception_info}}</exception>\n{% endif %}<returncode>{{output.returncode}}</returncode>\n<output>\n{{output.output}}</output>",
+        "multimodal_regex": ""
+      },
+      "model_type": "minisweagent.models.litellm_model.LitellmModel",
+      "environment": {
+        "image": "swebench/sweb.eval.x86_64.pytest-dev_1776_pytest-10051:latest",
+        "cwd": "/testbed",
+        "env": {
+          "PAGER": "cat",
+          "MANPAGER": "cat",
+          "LESS": "-R",
+          "PIP_PROGRESS_BAR": "off",
+          "TQDM_DISABLE": "1"
+        },
+        "forward_env": [],
+        "timeout": 60,
+        "executable": "docker",
+        "run_args": [
+          "--rm"
+        ],
+        "container_timeout": "2h",
+        "pull_timeout": 120,
+        "interpreter": [
+          "bash",
+          "-lc"
+        ]
+      },
+      "environment_type": "minisweagent.environments.docker.DockerEnvironment"
+    },
+    "mini_version": "2.2.6",
+    "exit_status": "Submitted",
+    "submission": "diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py\nindex a4f4214b1..8db4c6cbb 100644\n--- a/src/_pytest/logging.py\n+++ b/src/_pytest/logging.py\n@@ -46,6 +46,7 @@ DEFAULT_LOG_DATE_FORMAT = \"%H:%M:%S\"\n _ANSI_ESCAPE_SEQ = re.compile(r\"\\x1b\\[[\\d;]+m\")\n caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n+caplog_when_key = StashKey[str]()\n \n \n def _remove_ansi_escape_sequences(text: str) -> str:\n@@ -441,6 +442,9 @@ class LogCaptureFixture:\n     def clear(self) -> None:\n         \"\"\"Reset the list of log records and the captured log text.\"\"\"\n         self.handler.reset()\n+        self._item.stash[caplog_records_key][\n+            self._item.stash[caplog_when_key]\n+        ] = self.handler.records\n \n     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:\n         \"\"\"Set the level of a logger for the duration of a test.\n@@ -698,6 +702,7 @@ class LoggingPlugin:\n             report_handler.reset()\n             item.stash[caplog_records_key][when] = caplog_handler.records\n             item.stash[caplog_handler_key] = caplog_handler\n+            item.stash[caplog_when_key] = when\n \n             yield\n \n@@ -725,6 +730,7 @@ class LoggingPlugin:\n         yield from self._runtest_for(item, \"teardown\")\n         del item.stash[caplog_records_key]\n         del item.stash[caplog_handler_key]\n+        del item.stash[caplog_when_key]\n \n     @hookimpl\n     def pytest_runtest_logfinish(self) -> None:\ndiff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py\nindex bcb20de58..c52e08e72 100644\n--- a/testing/logging/test_fixture.py\n+++ b/testing/logging/test_fixture.py\n@@ -308,3 +308,19 @@ def test_log_report_captures_according_to_config_option_upon_failure(\n         [\"*Print message*\", \"*INFO log message*\", \"*WARNING log message*\"]\n     )\n     assert result.ret == 1\n+\n+\n+def test_caplog_get_records_consistent_with_records_after_clear(caplog):\n+    \"\"\"After caplog.clear(), get_records() should be consistent with caplog.records.\"\"\"\n+    caplog.set_level(logging.INFO)\n+\n+    assert caplog.get_records(\"call\") == caplog.records\n+    logger.info(\"test\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    caplog.clear()\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert caplog.get_records(\"call\") == []\n+\n+    logger.info(\"after clear\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert len(caplog.get_records(\"call\")) == 1\n"
+  },
+  "messages": [
+    {
+      "role": "system",
+      "content": "You are a software engineer tasked with resolving issues in a codebase.\n\nYou produce minimal, clean diffs. You do NOT:\n- Add unnecessary comments, docstrings, or logging\n- Refactor code beyond what the issue requires\n- Add speculative error handling or feature flags\n- Leave debug prints or TODOs behind\n\nYou DO:\n- Read existing code before changing it\n- Match the repo's naming conventions, formatting, and patterns\n- Change only what is needed to fix the issue\n- Verify your fix works before submitting\n\n"
+    },
+    {
+      "role": "user",
+      "content": "Please fix this issue: caplog.get_records and caplog.clear conflict\n# Description\r\n\r\n`caplog.get_records()` gets decoupled from actual caplog records when `caplog.clear()` is called. As a result, after `caplog.clear()` is called, `caplog.get_records()` is frozen: it does not get cleared, nor does it get new records.\r\n\r\nDuring test set up it is [set to the same list](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L699) as `caplog.records`, but the latter gets [replaced rather than cleared](https://github.com/pytest-dev/pytest/blob/28e8c8582ea947704655a3c3f2d57184831336fd/src/_pytest/logging.py#L345) in `caplog.clear()`, which diverges the two objects.\r\n\r\n# Reproductive example\r\n```python\r\nimport logging\r\n\r\ndef test(caplog) -> None:\r\n    def verify_consistency() -> None:\r\n        assert caplog.get_records(\"call\") == caplog.records\r\n\r\n    verify_consistency()\r\n    logging.warning(\"test\")\r\n    verify_consistency()\r\n    caplog.clear()\r\n    verify_consistency()  # fails: assert [<LogRecord: ...y, 8, \"test\">] == []\r\n```\r\n\r\n# Environment details\r\nArch Linux, Python 3.9.10:\r\n```\r\nPackage    Version\r\n---------- -------\r\nattrs      21.4.0\r\niniconfig  1.1.1\r\npackaging  21.3\r\npip        22.0.4\r\npluggy     1.0.0\r\npy         1.11.0\r\npyparsing  3.0.8\r\npytest     7.1.1\r\nsetuptools 60.10.0\r\ntomli      2.0.1\r\nwheel      0.37.1\r\n```\n\n\nYou can execute bash commands and edit files to implement the necessary changes.\n\n## Workflow\n\n1. Read the relevant files to understand the codebase and the issue\n2. Write a minimal fix\n3. Write tests that verify your fix (edge cases, regression tests)\n4. Run your tests to confirm they pass\n5. Submit your changes as a patch\n\n## Command Execution Rules\n\nEach response should include:\n\n1. **Reasoning text** where you explain your analysis and plan\n2. At least one bash tool call with your command\n\n**CRITICAL REQUIREMENTS:**\n\n- Your response MUST include AT LEAST ONE bash tool call\n- Directory or environment variable changes are not persistent (new subshell each time)\n- Prefix commands with `cd /testbed && ...` as needed\n\n## Submission\n\nWhen done, submit your changes as a git patch. Follow these steps IN ORDER with SEPARATE commands:\n\nStep 1: Create the patch\n`cd /testbed && git diff -- path/to/file1 path/to/file2 path/to/test_file > /tmp/patch.txt`\nInclude both your source fix AND any tests you wrote. Do NOT commit.\n\n<IMPORTANT>\nDo not include helper tools, config files, or binaries in the patch.\n</IMPORTANT>\n\nStep 2: Verify\nInspect /tmp/patch.txt \u2014 headers should show `--- a/` and `+++ b/` paths.\n\nStep 3: Submit (EXACT command)\n```bash\necho COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat /tmp/patch.txt\n```\n\n<CRITICAL>\nCreating the patch and submitting MUST be separate commands.\nYou CANNOT continue working after submitting.\n</CRITICAL>\n\n## Learnings & Notes\n\nTwo files are available in your environment for maintaining knowledge:\n\n**`/tmp/repo_learnings.txt`** \u2014 Shared codebase knowledge that persists across tasks.\nRead this FIRST before exploring. It may contain info from previous sessions:\nrepo structure, naming conventions, test patterns, common pitfalls, what the\nreviewer typically cares about. Before submitting, UPDATE this file with anything\nyou learned about the codebase that would help on future tasks. Keep it concise\nand organized. Remove anything you find to be wrong. Rewrite the whole file, don't\njust append.\n\n**`/tmp/task_notes.txt`** \u2014 Your scratch notes for this specific task.\nPersists across revision rounds. Use it to track: what you explored, what you\ntried, what failed and why, key file locations. On later rounds this will contain\nyour notes from previous attempts \u2014 read it to avoid repeating mistakes.\nBefore submitting, update it with what you learned this round.\n\n## Review Feedback (from previous attempt)\nThe reviewer requested changes. Address ALL of the following:\n\nVERDICT: REQUEST_CHANGES\n\nCORRECTNESS: PASS \u2014 The fix correctly re-syncs `caplog_records_key` with the handler's new records list after `clear()` calls `handler.reset()`, which replaces the list.\nMINIMALISM: FAIL \u2014 Missing cleanup of `caplog_when_key` in teardown, which is needed for consistency; otherwise the approach is minimal and necessary.\nSTYLE: PASS \u2014 Follows the existing codebase conventions for StashKey usage, naming, and placement.\nHYGIENE: PASS \u2014 No stray comments, debug prints, or TODOs.\nARCHITECTURAL_FIT: PASS \u2014 Using a StashKey to track the current phase is consistent with how caplog_handler_key and caplog_records_key are used.\nTEST_QUALITY: PASS \u2014 Test covers the exact bug scenario from the issue: logging, clear, then verifying get_records stays consistent with records. Also tests that new records after clear are captured correctly.\n\nCOMMENTS:\n- [src/_pytest/logging.py:731] `caplog_when_key` is not cleaned up in `pytest_runtest_teardown` alongside `caplog_records_key` and `caplog_handler_key`. Add `del item.stash[caplog_when_key]` here for consistency with the existing cleanup pattern. While the stash is per-item and gets GC'd anyway, the existing code explicitly cleans up the other two keys, so this new key should follow the same pattern.\n"
+    },
+    {
+      "content": "\n\nLet me start by reading the relevant files and understanding the issue.",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cat /tmp/repo_learnings.txt 2>/dev/null; cat /tmp/task_notes.txt 2>/dev/null\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01JoQeETp5DM9qzXNV7jAhm5",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cat /tmp/repo_learnings.txt 2>/dev/null; cat /tmp/task_notes.txt 2>/dev/null",
+            "tool_call_id": "toolu_01JoQeETp5DM9qzXNV7jAhm5"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-0656b698-9da8-4054-bf3a-4b65d30f0089",
+          "created": 1773353471,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "\n\nLet me start by reading the relevant files and understanding the issue.",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cat /tmp/repo_learnings.txt 2>/dev/null; cat /tmp/task_notes.txt 2>/dev/null\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01JoQeETp5DM9qzXNV7jAhm5",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 97,
+            "prompt_tokens": 2132,
+            "total_tokens": 2229,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 97
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 0,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.013085000000000001,
+        "timestamp": 1773353471.563541
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n# pytest repo learnings\n\n## Structure\n- Source code: `src/_pytest/`\n- Tests: `testing/`\n- Logging module: `src/_pytest/logging.py`\n- Logging tests: `testing/logging/test_fixture.py`, `testing/logging/test_reporting.py`\n\n## Key patterns\n- Uses `StashKey` for storing per-item data (e.g., `caplog_handler_key`, `caplog_records_key`)\n- `LogCaptureHandler.reset()` creates a new list (not clearing in-place), important for phase isolation\n- `LogCaptureFixture` accesses handler via item stash, not direct reference\n- `_runtest_for` is the core method that sets up logging for each test phase (setup/call/teardown)\n- Each phase stores its records list reference in `item.stash[caplog_records_key][when]`\n- Stash keys are cleaned up in `pytest_runtest_teardown` with explicit `del` statements \u2014 new stash keys must follow this pattern\n\n## Testing\n- Run with: `python -m pytest testing/logging/ -v`\n- Config in `pyproject.toml`\n- Tests in `test_fixture.py` can be direct pytest tests (using caplog fixture) or pytester-based (for subprocess isolation)\n\n## Important design note\n- `LogCaptureHandler.reset()` must create a new list (not `clear()`) because each phase's records are stored separately in `caplog_records_key` dict. Clearing in-place would wipe previous phases' records.# Task: Fix caplog.get_records and caplog.clear conflict\n\n## Problem\n- `caplog.get_records()` returns list from `item.stash[caplog_records_key][when]`\n- `caplog.records` returns `handler.records` \n- Both initially point to same list (set in `_runtest_for`)\n- `caplog.clear()` calls `handler.reset()` which does `self.records = []` (new list)\n- This decouples the stash reference from the handler reference\n\n## Solution\n1. Added `caplog_when_key` StashKey to track current test phase\n2. Set it in `_runtest_for` alongside existing stash updates\n3. In `clear()`, after `handler.reset()`, update the stash entry to point to the new records list\n\n## Why not just clear in-place in reset()?\n- `reset()` is also called at the start of each phase in `_runtest_for`\n- If we clear in-place there, it would wipe the previous phase's records too\n- The previous phase's stash entry still points to the same list</output>",
+      "extra": {
+        "raw_output": "# pytest repo learnings\n\n## Structure\n- Source code: `src/_pytest/`\n- Tests: `testing/`\n- Logging module: `src/_pytest/logging.py`\n- Logging tests: `testing/logging/test_fixture.py`, `testing/logging/test_reporting.py`\n\n## Key patterns\n- Uses `StashKey` for storing per-item data (e.g., `caplog_handler_key`, `caplog_records_key`)\n- `LogCaptureHandler.reset()` creates a new list (not clearing in-place), important for phase isolation\n- `LogCaptureFixture` accesses handler via item stash, not direct reference\n- `_runtest_for` is the core method that sets up logging for each test phase (setup/call/teardown)\n- Each phase stores its records list reference in `item.stash[caplog_records_key][when]`\n- Stash keys are cleaned up in `pytest_runtest_teardown` with explicit `del` statements \u2014 new stash keys must follow this pattern\n\n## Testing\n- Run with: `python -m pytest testing/logging/ -v`\n- Config in `pyproject.toml`\n- Tests in `test_fixture.py` can be direct pytest tests (using caplog fixture) or pytester-based (for subprocess isolation)\n\n## Important design note\n- `LogCaptureHandler.reset()` must create a new list (not `clear()`) because each phase's records are stored separately in `caplog_records_key` dict. Clearing in-place would wipe previous phases' records.# Task: Fix caplog.get_records and caplog.clear conflict\n\n## Problem\n- `caplog.get_records()` returns list from `item.stash[caplog_records_key][when]`\n- `caplog.records` returns `handler.records` \n- Both initially point to same list (set in `_runtest_for`)\n- `caplog.clear()` calls `handler.reset()` which does `self.records = []` (new list)\n- This decouples the stash reference from the handler reference\n\n## Solution\n1. Added `caplog_when_key` StashKey to track current test phase\n2. Set it in `_runtest_for` alongside existing stash updates\n3. In `clear()`, after `handler.reset()`, update the stash entry to point to the new records list\n\n## Why not just clear in-place in reset()?\n- `reset()` is also called at the start of each phase in `_runtest_for`\n- If we clear in-place there, it would wipe the previous phase's records too\n- The previous phase's stash entry still points to the same list",
+        "returncode": 0,
+        "timestamp": 1773353472.904774,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_01JoQeETp5DM9qzXNV7jAhm5",
+      "role": "tool"
+    },
+    {
+      "content": "I have notes from a previous attempt. The approach was correct but I missed cleaning up `caplog_when_key` in teardown. Let me look at the current state of the code:",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && git diff\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01J54JBuhUTGzwwF7LA24sR6",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && git diff",
+            "tool_call_id": "toolu_01J54JBuhUTGzwwF7LA24sR6"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-de48a322-75c5-48b8-a793-554ab4eea71c",
+          "created": 1773353477,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "I have notes from a previous attempt. The approach was correct but I missed cleaning up `caplog_when_key` in teardown. Let me look at the current state of the code:",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && git diff\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01J54JBuhUTGzwwF7LA24sR6",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 98,
+            "prompt_tokens": 2890,
+            "total_tokens": 2988,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 98
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 0,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.016900000000000002,
+        "timestamp": 1773353477.195947
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\ndiff --git a/src/_pytest/logging.py b/src/_pytest/logging.py\nindex a4f4214b1..0259ec1d2 100644\n--- a/src/_pytest/logging.py\n+++ b/src/_pytest/logging.py\n@@ -46,6 +46,7 @@ DEFAULT_LOG_DATE_FORMAT = \"%H:%M:%S\"\n _ANSI_ESCAPE_SEQ = re.compile(r\"\\x1b\\[[\\d;]+m\")\n caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n+caplog_when_key = StashKey[str]()\n \n \n def _remove_ansi_escape_sequences(text: str) -> str:\n@@ -441,6 +442,9 @@ class LogCaptureFixture:\n     def clear(self) -> None:\n         \"\"\"Reset the list of log records and the captured log text.\"\"\"\n         self.handler.reset()\n+        self._item.stash[caplog_records_key][\n+            self._item.stash[caplog_when_key]\n+        ] = self.handler.records\n \n     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:\n         \"\"\"Set the level of a logger for the duration of a test.\n@@ -698,6 +702,7 @@ class LoggingPlugin:\n             report_handler.reset()\n             item.stash[caplog_records_key][when] = caplog_handler.records\n             item.stash[caplog_handler_key] = caplog_handler\n+            item.stash[caplog_when_key] = when\n \n             yield\n \ndiff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py\nindex bcb20de58..c52e08e72 100644\n--- a/testing/logging/test_fixture.py\n+++ b/testing/logging/test_fixture.py\n@@ -308,3 +308,19 @@ def test_log_report_captures_according_to_config_option_upon_failure(\n         [\"*Print message*\", \"*INFO log message*\", \"*WARNING log message*\"]\n     )\n     assert result.ret == 1\n+\n+\n+def test_caplog_get_records_consistent_with_records_after_clear(caplog):\n+    \"\"\"After caplog.clear(), get_records() should be consistent with caplog.records.\"\"\"\n+    caplog.set_level(logging.INFO)\n+\n+    assert caplog.get_records(\"call\") == caplog.records\n+    logger.info(\"test\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    caplog.clear()\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert caplog.get_records(\"call\") == []\n+\n+    logger.info(\"after clear\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert len(caplog.get_records(\"call\")) == 1\n</output>",
+      "extra": {
+        "raw_output": "diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py\nindex a4f4214b1..0259ec1d2 100644\n--- a/src/_pytest/logging.py\n+++ b/src/_pytest/logging.py\n@@ -46,6 +46,7 @@ DEFAULT_LOG_DATE_FORMAT = \"%H:%M:%S\"\n _ANSI_ESCAPE_SEQ = re.compile(r\"\\x1b\\[[\\d;]+m\")\n caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n+caplog_when_key = StashKey[str]()\n \n \n def _remove_ansi_escape_sequences(text: str) -> str:\n@@ -441,6 +442,9 @@ class LogCaptureFixture:\n     def clear(self) -> None:\n         \"\"\"Reset the list of log records and the captured log text.\"\"\"\n         self.handler.reset()\n+        self._item.stash[caplog_records_key][\n+            self._item.stash[caplog_when_key]\n+        ] = self.handler.records\n \n     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:\n         \"\"\"Set the level of a logger for the duration of a test.\n@@ -698,6 +702,7 @@ class LoggingPlugin:\n             report_handler.reset()\n             item.stash[caplog_records_key][when] = caplog_handler.records\n             item.stash[caplog_handler_key] = caplog_handler\n+            item.stash[caplog_when_key] = when\n \n             yield\n \ndiff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py\nindex bcb20de58..c52e08e72 100644\n--- a/testing/logging/test_fixture.py\n+++ b/testing/logging/test_fixture.py\n@@ -308,3 +308,19 @@ def test_log_report_captures_according_to_config_option_upon_failure(\n         [\"*Print message*\", \"*INFO log message*\", \"*WARNING log message*\"]\n     )\n     assert result.ret == 1\n+\n+\n+def test_caplog_get_records_consistent_with_records_after_clear(caplog):\n+    \"\"\"After caplog.clear(), get_records() should be consistent with caplog.records.\"\"\"\n+    caplog.set_level(logging.INFO)\n+\n+    assert caplog.get_records(\"call\") == caplog.records\n+    logger.info(\"test\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    caplog.clear()\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert caplog.get_records(\"call\") == []\n+\n+    logger.info(\"after clear\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert len(caplog.get_records(\"call\")) == 1\n",
+        "returncode": 0,
+        "timestamp": 1773353478.9333272,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_01J54JBuhUTGzwwF7LA24sR6",
+      "role": "tool"
+    },
+    {
+      "content": "I can see the previous changes. I just need to add the cleanup of `caplog_when_key` in the teardown. Let me find that section:",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && grep -n 'caplog_handler_key\\\\|caplog_records_key\\\\|caplog_when_key' src/_pytest/logging.py\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01DmwDVqeF2iXKRzUVr33exf",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && grep -n 'caplog_handler_key\\|caplog_records_key\\|caplog_when_key' src/_pytest/logging.py",
+            "tool_call_id": "toolu_01DmwDVqeF2iXKRzUVr33exf"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-a0a3f1ea-ab6d-4586-a770-08370f97fc28",
+          "created": 1773353483,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "I can see the previous changes. I just need to add the cleanup of `caplog_when_key` in the teardown. Let me find that section:",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && grep -n 'caplog_handler_key\\\\|caplog_records_key\\\\|caplog_when_key' src/_pytest/logging.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01DmwDVqeF2iXKRzUVr33exf",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 125,
+            "prompt_tokens": 3807,
+            "total_tokens": 3932,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 125
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 0,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 0,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 0,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.02216,
+        "timestamp": 1773353483.165693
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n47:caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n48:caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n49:caplog_when_key = StashKey[str]()\n387:        return self._item.stash[caplog_handler_key]\n400:        return self._item.stash[caplog_records_key].get(when, [])\n445:        self._item.stash[caplog_records_key][\n446:            self._item.stash[caplog_when_key]\n703:            item.stash[caplog_records_key][when] = caplog_handler.records\n704:            item.stash[caplog_handler_key] = caplog_handler\n705:            item.stash[caplog_when_key] = when\n717:        item.stash[caplog_records_key] = empty\n731:        del item.stash[caplog_records_key]\n732:        del item.stash[caplog_handler_key]\n</output>",
+      "extra": {
+        "raw_output": "47:caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n48:caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n49:caplog_when_key = StashKey[str]()\n387:        return self._item.stash[caplog_handler_key]\n400:        return self._item.stash[caplog_records_key].get(when, [])\n445:        self._item.stash[caplog_records_key][\n446:            self._item.stash[caplog_when_key]\n703:            item.stash[caplog_records_key][when] = caplog_handler.records\n704:            item.stash[caplog_handler_key] = caplog_handler\n705:            item.stash[caplog_when_key] = when\n717:        item.stash[caplog_records_key] = empty\n731:        del item.stash[caplog_records_key]\n732:        del item.stash[caplog_handler_key]\n",
+        "returncode": 0,
+        "timestamp": 1773353484.398381,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_01DmwDVqeF2iXKRzUVr33exf",
+      "role": "tool"
+    },
+    {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && sed -n '725,740p' src/_pytest/logging.py\"}",
+            "name": "bash"
+          },
+          "id": "toolu_016pFUzzMXzGe7dHMVW2q7zF",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && sed -n '725,740p' src/_pytest/logging.py",
+            "tool_call_id": "toolu_016pFUzzMXzGe7dHMVW2q7zF"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-0e2a1f34-ce37-47f0-b9d9-bff99dac12ae",
+          "created": 1773353487,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": null,
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && sed -n '725,740p' src/_pytest/logging.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_016pFUzzMXzGe7dHMVW2q7zF",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 71,
+            "prompt_tokens": 4220,
+            "total_tokens": 4291,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 71
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 0,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 4219,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 4219,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 4219,
+            "cache_read_input_tokens": 0,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.02814875,
+        "timestamp": 1773353487.358125
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n\n    @hookimpl(hookwrapper=True)\n    def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None, None, None]:\n        self.log_cli_handler.set_when(\"teardown\")\n\n        yield from self._runtest_for(item, \"teardown\")\n        del item.stash[caplog_records_key]\n        del item.stash[caplog_handler_key]\n\n    @hookimpl\n    def pytest_runtest_logfinish(self) -> None:\n        self.log_cli_handler.set_when(\"finish\")\n\n    @hookimpl(hookwrapper=True, tryfirst=True)\n    def pytest_sessionfinish(self) -> Generator[None, None, None]:\n        self.log_cli_handler.set_when(\"sessionfinish\")\n</output>",
+      "extra": {
+        "raw_output": "\n    @hookimpl(hookwrapper=True)\n    def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None, None, None]:\n        self.log_cli_handler.set_when(\"teardown\")\n\n        yield from self._runtest_for(item, \"teardown\")\n        del item.stash[caplog_records_key]\n        del item.stash[caplog_handler_key]\n\n    @hookimpl\n    def pytest_runtest_logfinish(self) -> None:\n        self.log_cli_handler.set_when(\"finish\")\n\n    @hookimpl(hookwrapper=True, tryfirst=True)\n    def pytest_sessionfinish(self) -> Generator[None, None, None]:\n        self.log_cli_handler.set_when(\"sessionfinish\")\n",
+        "returncode": 0,
+        "timestamp": 1773353488.618886,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_016pFUzzMXzGe7dHMVW2q7zF",
+      "role": "tool"
+    },
+    {
+      "content": "I need to add `del item.stash[caplog_when_key]` after the other two deletes:",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && sed -i '/del item.stash\\\\[caplog_handler_key\\\\]/a\\\\        del item.stash[caplog_when_key]' src/_pytest/logging.py\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01VaqpbZ3XaW5qXQbpk5NbXi",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && sed -i '/del item.stash\\[caplog_handler_key\\]/a\\        del item.stash[caplog_when_key]' src/_pytest/logging.py",
+            "tool_call_id": "toolu_01VaqpbZ3XaW5qXQbpk5NbXi"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-060c300d-29dc-4aa2-a7e2-4ef9457be22b",
+          "created": 1773353492,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "I need to add `del item.stash[caplog_when_key]` after the other two deletes:",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && sed -i '/del item.stash\\\\[caplog_handler_key\\\\]/a\\\\        del item.stash[caplog_when_key]' src/_pytest/logging.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01VaqpbZ3XaW5qXQbpk5NbXi",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 125,
+            "prompt_tokens": 4521,
+            "total_tokens": 4646,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 125
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 4219,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 301,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 301,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 301,
+            "cache_read_input_tokens": 4219,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.0071207499999999995,
+        "timestamp": 1773353492.539639
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n</output>",
+      "extra": {
+        "raw_output": "",
+        "returncode": 0,
+        "timestamp": 1773353493.8142002,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_01VaqpbZ3XaW5qXQbpk5NbXi",
+      "role": "tool"
+    },
+    {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && sed -n '725,740p' src/_pytest/logging.py\"}",
+            "name": "bash"
+          },
+          "id": "toolu_013p7D1grS57VqPdZyaACyYh",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && sed -n '725,740p' src/_pytest/logging.py",
+            "tool_call_id": "toolu_013p7D1grS57VqPdZyaACyYh"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-dabc2978-7444-4992-aebc-7b76124e3b4c",
+          "created": 1773353503,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": null,
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && sed -n '725,740p' src/_pytest/logging.py\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_013p7D1grS57VqPdZyaACyYh",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 71,
+            "prompt_tokens": 4673,
+            "total_tokens": 4744,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 71
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 4520,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 152,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 152,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 152,
+            "cache_read_input_tokens": 4520,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.00499,
+        "timestamp": 1773353503.4349592
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n\n    @hookimpl(hookwrapper=True)\n    def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None, None, None]:\n        self.log_cli_handler.set_when(\"teardown\")\n\n        yield from self._runtest_for(item, \"teardown\")\n        del item.stash[caplog_records_key]\n        del item.stash[caplog_handler_key]\n        del item.stash[caplog_when_key]\n\n    @hookimpl\n    def pytest_runtest_logfinish(self) -> None:\n        self.log_cli_handler.set_when(\"finish\")\n\n    @hookimpl(hookwrapper=True, tryfirst=True)\n    def pytest_sessionfinish(self) -> Generator[None, None, None]:\n</output>",
+      "extra": {
+        "raw_output": "\n    @hookimpl(hookwrapper=True)\n    def pytest_runtest_teardown(self, item: nodes.Item) -> Generator[None, None, None]:\n        self.log_cli_handler.set_when(\"teardown\")\n\n        yield from self._runtest_for(item, \"teardown\")\n        del item.stash[caplog_records_key]\n        del item.stash[caplog_handler_key]\n        del item.stash[caplog_when_key]\n\n    @hookimpl\n    def pytest_runtest_logfinish(self) -> None:\n        self.log_cli_handler.set_when(\"finish\")\n\n    @hookimpl(hookwrapper=True, tryfirst=True)\n    def pytest_sessionfinish(self) -> Generator[None, None, None]:\n",
+        "returncode": 0,
+        "timestamp": 1773353504.646825,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_013p7D1grS57VqPdZyaACyYh",
+      "role": "tool"
+    },
+    {
+      "content": "Now let me run the test to verify:",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && python -m pytest testing/logging/test_fixture.py::test_caplog_get_records_consistent_with_records_after_clear -v\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01JKoetr7ePMx1E79ndk69qA",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && python -m pytest testing/logging/test_fixture.py::test_caplog_get_records_consistent_with_records_after_clear -v",
+            "tool_call_id": "toolu_01JKoetr7ePMx1E79ndk69qA"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-0b667d8e-2f28-44bb-a2ca-fc67b0cc4c22",
+          "created": 1773353507,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Now let me run the test to verify:",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && python -m pytest testing/logging/test_fixture.py::test_caplog_get_records_consistent_with_records_after_clear -v\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01JKoetr7ePMx1E79ndk69qA",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 99,
+            "prompt_tokens": 4971,
+            "total_tokens": 5070,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 99
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 4672,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 298,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 298,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 298,
+            "cache_read_input_tokens": 4672,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.0066785,
+        "timestamp": 1773353507.914508
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n============================= test session starts ==============================\nplatform linux -- Python 3.9.20, pytest-7.2.0.dev157+gaa55975c7, pluggy-0.13.1 -- /opt/miniconda3/envs/testbed/bin/python\ncachedir: .pytest_cache\nrootdir: /testbed, configfile: pyproject.toml\ncollecting ... collected 1 item\n\ntesting/logging/test_fixture.py::test_caplog_get_records_consistent_with_records_after_clear PASSED [100%]\n\n============================== 1 passed in 0.05s ===============================\n</output>",
+      "extra": {
+        "raw_output": "============================= test session starts ==============================\nplatform linux -- Python 3.9.20, pytest-7.2.0.dev157+gaa55975c7, pluggy-0.13.1 -- /opt/miniconda3/envs/testbed/bin/python\ncachedir: .pytest_cache\nrootdir: /testbed, configfile: pyproject.toml\ncollecting ... collected 1 item\n\ntesting/logging/test_fixture.py::test_caplog_get_records_consistent_with_records_after_clear PASSED [100%]\n\n============================== 1 passed in 0.05s ===============================\n",
+        "returncode": 0,
+        "timestamp": 1773353510.953899,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_01JKoetr7ePMx1E79ndk69qA",
+      "role": "tool"
+    },
+    {
+      "content": "Let me also run the full logging test suite to make sure nothing is broken:",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && python -m pytest testing/logging/ -v 2>&1 | tail -40\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01LdswfFmLyLPsz7AimYKgXr",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && python -m pytest testing/logging/ -v 2>&1 | tail -40",
+            "tool_call_id": "toolu_01LdswfFmLyLPsz7AimYKgXr"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-a00aceae-ce69-459e-a1d6-d910eb9e76e8",
+          "created": 1773353526,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "Let me also run the full logging test suite to make sure nothing is broken:",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && python -m pytest testing/logging/ -v 2>&1 | tail -40\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01LdswfFmLyLPsz7AimYKgXr",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 91,
+            "prompt_tokens": 5248,
+            "total_tokens": 5339,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 91
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 4970,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 277,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 277,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 277,
+            "cache_read_input_tokens": 4970,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.006496249999999999,
+        "timestamp": 1773353526.2964401
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\ntesting/logging/test_reporting.py::test_nothing_logged PASSED            [ 38%]\ntesting/logging/test_reporting.py::test_messages_logged PASSED           [ 40%]\ntesting/logging/test_reporting.py::test_root_logger_affected PASSED      [ 41%]\ntesting/logging/test_reporting.py::test_log_cli_level_log_level_interaction PASSED [ 43%]\ntesting/logging/test_reporting.py::test_setup_logging PASSED             [ 45%]\ntesting/logging/test_reporting.py::test_teardown_logging PASSED          [ 46%]\ntesting/logging/test_reporting.py::test_log_cli_enabled_disabled[True] PASSED [ 48%]\ntesting/logging/test_reporting.py::test_log_cli_enabled_disabled[False] PASSED [ 50%]\ntesting/logging/test_reporting.py::test_log_cli_default_level PASSED     [ 51%]\ntesting/logging/test_reporting.py::test_log_cli_default_level_multiple_tests PASSED [ 53%]\ntesting/logging/test_reporting.py::test_log_cli_default_level_sections PASSED [ 55%]\ntesting/logging/test_reporting.py::test_live_logs_unknown_sections PASSED [ 56%]\ntesting/logging/test_reporting.py::test_sections_single_new_line_after_test_outcome PASSED [ 58%]\ntesting/logging/test_reporting.py::test_log_cli_level PASSED             [ 60%]\ntesting/logging/test_reporting.py::test_log_cli_ini_level PASSED         [ 61%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[] PASSED     [ 63%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[--log-level=WARNING] PASSED [ 65%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[--log-file-level=WARNING] PASSED [ 66%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[--log-cli-level=WARNING] PASSED [ 68%]\ntesting/logging/test_reporting.py::test_log_file_cli PASSED              [ 70%]\ntesting/logging/test_reporting.py::test_log_file_cli_level PASSED        [ 71%]\ntesting/logging/test_reporting.py::test_log_level_not_changed_by_default PASSED [ 73%]\ntesting/logging/test_reporting.py::test_log_file_ini PASSED              [ 75%]\ntesting/logging/test_reporting.py::test_log_file_ini_level PASSED        [ 76%]\ntesting/logging/test_reporting.py::test_log_file_unicode PASSED          [ 78%]\ntesting/logging/test_reporting.py::test_collection_live_logging PASSED   [ 80%]\ntesting/logging/test_reporting.py::test_collection_collect_only_live_logging[] PASSED [ 81%]\ntesting/logging/test_reporting.py::test_collection_collect_only_live_logging[-q] PASSED [ 83%]\ntesting/logging/test_reporting.py::test_collection_collect_only_live_logging[-qq] PASSED [ 85%]\ntesting/logging/test_reporting.py::test_collection_logging_to_file PASSED [ 86%]\ntesting/logging/test_reporting.py::test_log_in_hooks PASSED              [ 88%]\ntesting/logging/test_reporting.py::test_log_in_runtest_logreport PASSED  [ 90%]\ntesting/logging/test_reporting.py::test_log_set_path PASSED              [ 91%]\ntesting/logging/test_reporting.py::test_colored_captured_log PASSED      [ 93%]\ntesting/logging/test_reporting.py::test_colored_ansi_esc_caplogtext PASSED [ 95%]\ntesting/logging/test_reporting.py::test_logging_emit_error PASSED        [ 96%]\ntesting/logging/test_reporting.py::test_logging_emit_error_supressed PASSED [ 98%]\ntesting/logging/test_reporting.py::test_log_file_cli_subdirectories_are_successfully_created PASSED [100%]\n\n============================= 60 passed in 12.94s ==============================\n</output>",
+      "extra": {
+        "raw_output": "testing/logging/test_reporting.py::test_nothing_logged PASSED            [ 38%]\ntesting/logging/test_reporting.py::test_messages_logged PASSED           [ 40%]\ntesting/logging/test_reporting.py::test_root_logger_affected PASSED      [ 41%]\ntesting/logging/test_reporting.py::test_log_cli_level_log_level_interaction PASSED [ 43%]\ntesting/logging/test_reporting.py::test_setup_logging PASSED             [ 45%]\ntesting/logging/test_reporting.py::test_teardown_logging PASSED          [ 46%]\ntesting/logging/test_reporting.py::test_log_cli_enabled_disabled[True] PASSED [ 48%]\ntesting/logging/test_reporting.py::test_log_cli_enabled_disabled[False] PASSED [ 50%]\ntesting/logging/test_reporting.py::test_log_cli_default_level PASSED     [ 51%]\ntesting/logging/test_reporting.py::test_log_cli_default_level_multiple_tests PASSED [ 53%]\ntesting/logging/test_reporting.py::test_log_cli_default_level_sections PASSED [ 55%]\ntesting/logging/test_reporting.py::test_live_logs_unknown_sections PASSED [ 56%]\ntesting/logging/test_reporting.py::test_sections_single_new_line_after_test_outcome PASSED [ 58%]\ntesting/logging/test_reporting.py::test_log_cli_level PASSED             [ 60%]\ntesting/logging/test_reporting.py::test_log_cli_ini_level PASSED         [ 61%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[] PASSED     [ 63%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[--log-level=WARNING] PASSED [ 65%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[--log-file-level=WARNING] PASSED [ 66%]\ntesting/logging/test_reporting.py::test_log_cli_auto_enable[--log-cli-level=WARNING] PASSED [ 68%]\ntesting/logging/test_reporting.py::test_log_file_cli PASSED              [ 70%]\ntesting/logging/test_reporting.py::test_log_file_cli_level PASSED        [ 71%]\ntesting/logging/test_reporting.py::test_log_level_not_changed_by_default PASSED [ 73%]\ntesting/logging/test_reporting.py::test_log_file_ini PASSED              [ 75%]\ntesting/logging/test_reporting.py::test_log_file_ini_level PASSED        [ 76%]\ntesting/logging/test_reporting.py::test_log_file_unicode PASSED          [ 78%]\ntesting/logging/test_reporting.py::test_collection_live_logging PASSED   [ 80%]\ntesting/logging/test_reporting.py::test_collection_collect_only_live_logging[] PASSED [ 81%]\ntesting/logging/test_reporting.py::test_collection_collect_only_live_logging[-q] PASSED [ 83%]\ntesting/logging/test_reporting.py::test_collection_collect_only_live_logging[-qq] PASSED [ 85%]\ntesting/logging/test_reporting.py::test_collection_logging_to_file PASSED [ 86%]\ntesting/logging/test_reporting.py::test_log_in_hooks PASSED              [ 88%]\ntesting/logging/test_reporting.py::test_log_in_runtest_logreport PASSED  [ 90%]\ntesting/logging/test_reporting.py::test_log_set_path PASSED              [ 91%]\ntesting/logging/test_reporting.py::test_colored_captured_log PASSED      [ 93%]\ntesting/logging/test_reporting.py::test_colored_ansi_esc_caplogtext PASSED [ 95%]\ntesting/logging/test_reporting.py::test_logging_emit_error PASSED        [ 96%]\ntesting/logging/test_reporting.py::test_logging_emit_error_supressed PASSED [ 98%]\ntesting/logging/test_reporting.py::test_log_file_cli_subdirectories_are_successfully_created PASSED [100%]\n\n============================= 60 passed in 12.94s ==============================\n",
+        "returncode": 0,
+        "timestamp": 1773353542.246597,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_01LdswfFmLyLPsz7AimYKgXr",
+      "role": "tool"
+    },
+    {
+      "content": "All 60 tests pass. Now let me update the learning files and create the patch:",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cat > /tmp/repo_learnings.txt << 'EOF'\\n# pytest repo learnings\\n\\n## Structure\\n- Source code: `src/_pytest/`\\n- Tests: `testing/`\\n- Logging module: `src/_pytest/logging.py`\\n- Logging tests: `testing/logging/test_fixture.py`, `testing/logging/test_reporting.py`\\n\\n## Key patterns\\n- Uses `StashKey` for storing per-item data (e.g., `caplog_handler_key`, `caplog_records_key`)\\n- `LogCaptureHandler.reset()` creates a new list (not clearing in-place), important for phase isolation\\n- `LogCaptureFixture` accesses handler via item stash, not direct reference\\n- `_runtest_for` is the core method that sets up logging for each test phase (setup/call/teardown)\\n- Each phase stores its records list reference in `item.stash[caplog_records_key][when]`\\n- Stash keys are cleaned up in `pytest_runtest_teardown` with explicit `del` statements \\u2014 new stash keys MUST follow this pattern\\n\\n## Testing\\n- Run with: `python -m pytest testing/logging/ -v`\\n- Config in `pyproject.toml`\\n- Tests in `test_fixture.py` can be direct pytest tests (using caplog fixture) or pytester-based (for subprocess isolation)\\n\\n## Important design note\\n- `LogCaptureHandler.reset()` must create a new list (not `clear()`) because each phase's records are stored separately in `caplog_records_key` dict. Clearing in-place would wipe previous phases' records.\\nEOF\"}",
+            "name": "bash"
+          },
+          "id": "toolu_011FfXu3WhbjxeuQUo2d6yAN",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cat > /tmp/repo_learnings.txt << 'EOF'\n# pytest repo learnings\n\n## Structure\n- Source code: `src/_pytest/`\n- Tests: `testing/`\n- Logging module: `src/_pytest/logging.py`\n- Logging tests: `testing/logging/test_fixture.py`, `testing/logging/test_reporting.py`\n\n## Key patterns\n- Uses `StashKey` for storing per-item data (e.g., `caplog_handler_key`, `caplog_records_key`)\n- `LogCaptureHandler.reset()` creates a new list (not clearing in-place), important for phase isolation\n- `LogCaptureFixture` accesses handler via item stash, not direct reference\n- `_runtest_for` is the core method that sets up logging for each test phase (setup/call/teardown)\n- Each phase stores its records list reference in `item.stash[caplog_records_key][when]`\n- Stash keys are cleaned up in `pytest_runtest_teardown` with explicit `del` statements \u2014 new stash keys MUST follow this pattern\n\n## Testing\n- Run with: `python -m pytest testing/logging/ -v`\n- Config in `pyproject.toml`\n- Tests in `test_fixture.py` can be direct pytest tests (using caplog fixture) or pytester-based (for subprocess isolation)\n\n## Important design note\n- `LogCaptureHandler.reset()` must create a new list (not `clear()`) because each phase's records are stored separately in `caplog_records_key` dict. Clearing in-place would wipe previous phases' records.\nEOF",
+            "tool_call_id": "toolu_011FfXu3WhbjxeuQUo2d6yAN"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-bec02b12-e7d2-42c3-bad8-e4009cc69567",
+          "created": 1773353559,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "All 60 tests pass. Now let me update the learning files and create the patch:",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cat > /tmp/repo_learnings.txt << 'EOF'\\n# pytest repo learnings\\n\\n## Structure\\n- Source code: `src/_pytest/`\\n- Tests: `testing/`\\n- Logging module: `src/_pytest/logging.py`\\n- Logging tests: `testing/logging/test_fixture.py`, `testing/logging/test_reporting.py`\\n\\n## Key patterns\\n- Uses `StashKey` for storing per-item data (e.g., `caplog_handler_key`, `caplog_records_key`)\\n- `LogCaptureHandler.reset()` creates a new list (not clearing in-place), important for phase isolation\\n- `LogCaptureFixture` accesses handler via item stash, not direct reference\\n- `_runtest_for` is the core method that sets up logging for each test phase (setup/call/teardown)\\n- Each phase stores its records list reference in `item.stash[caplog_records_key][when]`\\n- Stash keys are cleaned up in `pytest_runtest_teardown` with explicit `del` statements \\u2014 new stash keys MUST follow this pattern\\n\\n## Testing\\n- Run with: `python -m pytest testing/logging/ -v`\\n- Config in `pyproject.toml`\\n- Tests in `test_fixture.py` can be direct pytest tests (using caplog fixture) or pytester-based (for subprocess isolation)\\n\\n## Important design note\\n- `LogCaptureHandler.reset()` must create a new list (not `clear()`) because each phase's records are stored separately in `caplog_records_key` dict. Clearing in-place would wipe previous phases' records.\\nEOF\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_011FfXu3WhbjxeuQUo2d6yAN",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 459,
+            "prompt_tokens": 6477,
+            "total_tokens": 6936,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 459
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 5247,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 1229,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 1229,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 1229,
+            "cache_read_input_tokens": 5247,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.02178475,
+        "timestamp": 1773353559.411527
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n</output>",
+      "extra": {
+        "raw_output": "",
+        "returncode": 0,
+        "timestamp": 1773353560.7379782,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_011FfXu3WhbjxeuQUo2d6yAN",
+      "role": "tool"
+    },
+    {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cd /testbed && git diff -- src/_pytest/logging.py testing/logging/test_fixture.py > /tmp/patch.txt\"}",
+            "name": "bash"
+          },
+          "id": "toolu_019uup1MnPWhgaEYPM67wyEd",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cd /testbed && git diff -- src/_pytest/logging.py testing/logging/test_fixture.py > /tmp/patch.txt",
+            "tool_call_id": "toolu_019uup1MnPWhgaEYPM67wyEd"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-6334c23e-b2ec-49a4-97ce-ff2320bf3230",
+          "created": 1773353579,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": null,
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cd /testbed && git diff -- src/_pytest/logging.py testing/logging/test_fixture.py > /tmp/patch.txt\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_019uup1MnPWhgaEYPM67wyEd",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 81,
+            "prompt_tokens": 6963,
+            "total_tokens": 7044,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 81
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 6476,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 486,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 486,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 486,
+            "cache_read_input_tokens": 6476,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.0083055,
+        "timestamp": 1773353579.557204
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\n</output>",
+      "extra": {
+        "raw_output": "",
+        "returncode": 0,
+        "timestamp": 1773353580.994524,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_019uup1MnPWhgaEYPM67wyEd",
+      "role": "tool"
+    },
+    {
+      "content": null,
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 0,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"cat /tmp/patch.txt\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01PxGCiCgKYR93dt8hwsnEGz",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "cat /tmp/patch.txt",
+            "tool_call_id": "toolu_01PxGCiCgKYR93dt8hwsnEGz"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-8f4a618a-00af-425a-a348-6b36d6f17743",
+          "created": 1773353587,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": null,
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 0,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"cat /tmp/patch.txt\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01PxGCiCgKYR93dt8hwsnEGz",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 57,
+            "prompt_tokens": 7071,
+            "total_tokens": 7128,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 57
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 6962,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 108,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 108,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 108,
+            "cache_read_input_tokens": 6962,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.005586,
+        "timestamp": 1773353587.5457761
+      }
+    },
+    {
+      "content": "<returncode>0</returncode>\n<output>\ndiff --git a/src/_pytest/logging.py b/src/_pytest/logging.py\nindex a4f4214b1..8db4c6cbb 100644\n--- a/src/_pytest/logging.py\n+++ b/src/_pytest/logging.py\n@@ -46,6 +46,7 @@ DEFAULT_LOG_DATE_FORMAT = \"%H:%M:%S\"\n _ANSI_ESCAPE_SEQ = re.compile(r\"\\x1b\\[[\\d;]+m\")\n caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n+caplog_when_key = StashKey[str]()\n \n \n def _remove_ansi_escape_sequences(text: str) -> str:\n@@ -441,6 +442,9 @@ class LogCaptureFixture:\n     def clear(self) -> None:\n         \"\"\"Reset the list of log records and the captured log text.\"\"\"\n         self.handler.reset()\n+        self._item.stash[caplog_records_key][\n+            self._item.stash[caplog_when_key]\n+        ] = self.handler.records\n \n     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:\n         \"\"\"Set the level of a logger for the duration of a test.\n@@ -698,6 +702,7 @@ class LoggingPlugin:\n             report_handler.reset()\n             item.stash[caplog_records_key][when] = caplog_handler.records\n             item.stash[caplog_handler_key] = caplog_handler\n+            item.stash[caplog_when_key] = when\n \n             yield\n \n@@ -725,6 +730,7 @@ class LoggingPlugin:\n         yield from self._runtest_for(item, \"teardown\")\n         del item.stash[caplog_records_key]\n         del item.stash[caplog_handler_key]\n+        del item.stash[caplog_when_key]\n \n     @hookimpl\n     def pytest_runtest_logfinish(self) -> None:\ndiff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py\nindex bcb20de58..c52e08e72 100644\n--- a/testing/logging/test_fixture.py\n+++ b/testing/logging/test_fixture.py\n@@ -308,3 +308,19 @@ def test_log_report_captures_according_to_config_option_upon_failure(\n         [\"*Print message*\", \"*INFO log message*\", \"*WARNING log message*\"]\n     )\n     assert result.ret == 1\n+\n+\n+def test_caplog_get_records_consistent_with_records_after_clear(caplog):\n+    \"\"\"After caplog.clear(), get_records() should be consistent with caplog.records.\"\"\"\n+    caplog.set_level(logging.INFO)\n+\n+    assert caplog.get_records(\"call\") == caplog.records\n+    logger.info(\"test\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    caplog.clear()\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert caplog.get_records(\"call\") == []\n+\n+    logger.info(\"after clear\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert len(caplog.get_records(\"call\")) == 1\n</output>",
+      "extra": {
+        "raw_output": "diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py\nindex a4f4214b1..8db4c6cbb 100644\n--- a/src/_pytest/logging.py\n+++ b/src/_pytest/logging.py\n@@ -46,6 +46,7 @@ DEFAULT_LOG_DATE_FORMAT = \"%H:%M:%S\"\n _ANSI_ESCAPE_SEQ = re.compile(r\"\\x1b\\[[\\d;]+m\")\n caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n+caplog_when_key = StashKey[str]()\n \n \n def _remove_ansi_escape_sequences(text: str) -> str:\n@@ -441,6 +442,9 @@ class LogCaptureFixture:\n     def clear(self) -> None:\n         \"\"\"Reset the list of log records and the captured log text.\"\"\"\n         self.handler.reset()\n+        self._item.stash[caplog_records_key][\n+            self._item.stash[caplog_when_key]\n+        ] = self.handler.records\n \n     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:\n         \"\"\"Set the level of a logger for the duration of a test.\n@@ -698,6 +702,7 @@ class LoggingPlugin:\n             report_handler.reset()\n             item.stash[caplog_records_key][when] = caplog_handler.records\n             item.stash[caplog_handler_key] = caplog_handler\n+            item.stash[caplog_when_key] = when\n \n             yield\n \n@@ -725,6 +730,7 @@ class LoggingPlugin:\n         yield from self._runtest_for(item, \"teardown\")\n         del item.stash[caplog_records_key]\n         del item.stash[caplog_handler_key]\n+        del item.stash[caplog_when_key]\n \n     @hookimpl\n     def pytest_runtest_logfinish(self) -> None:\ndiff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py\nindex bcb20de58..c52e08e72 100644\n--- a/testing/logging/test_fixture.py\n+++ b/testing/logging/test_fixture.py\n@@ -308,3 +308,19 @@ def test_log_report_captures_according_to_config_option_upon_failure(\n         [\"*Print message*\", \"*INFO log message*\", \"*WARNING log message*\"]\n     )\n     assert result.ret == 1\n+\n+\n+def test_caplog_get_records_consistent_with_records_after_clear(caplog):\n+    \"\"\"After caplog.clear(), get_records() should be consistent with caplog.records.\"\"\"\n+    caplog.set_level(logging.INFO)\n+\n+    assert caplog.get_records(\"call\") == caplog.records\n+    logger.info(\"test\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    caplog.clear()\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert caplog.get_records(\"call\") == []\n+\n+    logger.info(\"after clear\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert len(caplog.get_records(\"call\")) == 1\n",
+        "returncode": 0,
+        "timestamp": 1773353588.792077,
+        "exception_info": ""
+      },
+      "tool_call_id": "toolu_01PxGCiCgKYR93dt8hwsnEGz",
+      "role": "tool"
+    },
+    {
+      "content": "The patch looks correct with all three changes:\n1. New `caplog_when_key` StashKey\n2. `clear()` re-syncs the stash records after `handler.reset()`\n3. `caplog_when_key` is set in `_runtest_for` and cleaned up in `pytest_runtest_teardown`",
+      "role": "assistant",
+      "tool_calls": [
+        {
+          "index": 1,
+          "caller": {
+            "type": "direct"
+          },
+          "function": {
+            "arguments": "{\"command\": \"echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat /tmp/patch.txt\"}",
+            "name": "bash"
+          },
+          "id": "toolu_01WxTVzpy2UoRvebYXJmhXpt",
+          "type": "function"
+        }
+      ],
+      "function_call": null,
+      "provider_specific_fields": {
+        "citations": null,
+        "thinking_blocks": null
+      },
+      "extra": {
+        "actions": [
+          {
+            "command": "echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat /tmp/patch.txt",
+            "tool_call_id": "toolu_01WxTVzpy2UoRvebYXJmhXpt"
+          }
+        ],
+        "response": {
+          "id": "chatcmpl-7bd28a97-82fa-4e79-8a5e-520d2d763cf7",
+          "created": 1773353606,
+          "model": "claude-opus-4-6",
+          "object": "chat.completion",
+          "system_fingerprint": null,
+          "choices": [
+            {
+              "finish_reason": "tool_calls",
+              "index": 0,
+              "message": {
+                "content": "The patch looks correct with all three changes:\n1. New `caplog_when_key` StashKey\n2. `clear()` re-syncs the stash records after `handler.reset()`\n3. `caplog_when_key` is set in `_runtest_for` and cleaned up in `pytest_runtest_teardown`",
+                "role": "assistant",
+                "tool_calls": [
+                  {
+                    "index": 1,
+                    "caller": {
+                      "type": "direct"
+                    },
+                    "function": {
+                      "arguments": "{\"command\": \"echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT && cat /tmp/patch.txt\"}",
+                      "name": "bash"
+                    },
+                    "id": "toolu_01WxTVzpy2UoRvebYXJmhXpt",
+                    "type": "function"
+                  }
+                ],
+                "function_call": null,
+                "provider_specific_fields": {
+                  "citations": null,
+                  "thinking_blocks": null
+                }
+              }
+            }
+          ],
+          "usage": {
+            "completion_tokens": 155,
+            "prompt_tokens": 8057,
+            "total_tokens": 8212,
+            "completion_tokens_details": {
+              "reasoning_tokens": 0,
+              "text_tokens": 155
+            },
+            "prompt_tokens_details": {
+              "audio_tokens": null,
+              "cached_tokens": 7070,
+              "text_tokens": null,
+              "image_tokens": null,
+              "video_tokens": null,
+              "cache_creation_tokens": 986,
+              "cache_creation_token_details": {
+                "ephemeral_5m_input_tokens": 986,
+                "ephemeral_1h_input_tokens": 0
+              }
+            },
+            "cache_creation_input_tokens": 986,
+            "cache_read_input_tokens": 7070,
+            "inference_geo": "global",
+            "speed": null
+          }
+        },
+        "cost": 0.0135775,
+        "timestamp": 1773353606.074978
+      }
+    },
+    {
+      "role": "exit",
+      "content": "diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py\nindex a4f4214b1..8db4c6cbb 100644\n--- a/src/_pytest/logging.py\n+++ b/src/_pytest/logging.py\n@@ -46,6 +46,7 @@ DEFAULT_LOG_DATE_FORMAT = \"%H:%M:%S\"\n _ANSI_ESCAPE_SEQ = re.compile(r\"\\x1b\\[[\\d;]+m\")\n caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n+caplog_when_key = StashKey[str]()\n \n \n def _remove_ansi_escape_sequences(text: str) -> str:\n@@ -441,6 +442,9 @@ class LogCaptureFixture:\n     def clear(self) -> None:\n         \"\"\"Reset the list of log records and the captured log text.\"\"\"\n         self.handler.reset()\n+        self._item.stash[caplog_records_key][\n+            self._item.stash[caplog_when_key]\n+        ] = self.handler.records\n \n     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:\n         \"\"\"Set the level of a logger for the duration of a test.\n@@ -698,6 +702,7 @@ class LoggingPlugin:\n             report_handler.reset()\n             item.stash[caplog_records_key][when] = caplog_handler.records\n             item.stash[caplog_handler_key] = caplog_handler\n+            item.stash[caplog_when_key] = when\n \n             yield\n \n@@ -725,6 +730,7 @@ class LoggingPlugin:\n         yield from self._runtest_for(item, \"teardown\")\n         del item.stash[caplog_records_key]\n         del item.stash[caplog_handler_key]\n+        del item.stash[caplog_when_key]\n \n     @hookimpl\n     def pytest_runtest_logfinish(self) -> None:\ndiff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py\nindex bcb20de58..c52e08e72 100644\n--- a/testing/logging/test_fixture.py\n+++ b/testing/logging/test_fixture.py\n@@ -308,3 +308,19 @@ def test_log_report_captures_according_to_config_option_upon_failure(\n         [\"*Print message*\", \"*INFO log message*\", \"*WARNING log message*\"]\n     )\n     assert result.ret == 1\n+\n+\n+def test_caplog_get_records_consistent_with_records_after_clear(caplog):\n+    \"\"\"After caplog.clear(), get_records() should be consistent with caplog.records.\"\"\"\n+    caplog.set_level(logging.INFO)\n+\n+    assert caplog.get_records(\"call\") == caplog.records\n+    logger.info(\"test\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    caplog.clear()\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert caplog.get_records(\"call\") == []\n+\n+    logger.info(\"after clear\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert len(caplog.get_records(\"call\")) == 1\n",
+      "extra": {
+        "exit_status": "Submitted",
+        "submission": "diff --git a/src/_pytest/logging.py b/src/_pytest/logging.py\nindex a4f4214b1..8db4c6cbb 100644\n--- a/src/_pytest/logging.py\n+++ b/src/_pytest/logging.py\n@@ -46,6 +46,7 @@ DEFAULT_LOG_DATE_FORMAT = \"%H:%M:%S\"\n _ANSI_ESCAPE_SEQ = re.compile(r\"\\x1b\\[[\\d;]+m\")\n caplog_handler_key = StashKey[\"LogCaptureHandler\"]()\n caplog_records_key = StashKey[Dict[str, List[logging.LogRecord]]]()\n+caplog_when_key = StashKey[str]()\n \n \n def _remove_ansi_escape_sequences(text: str) -> str:\n@@ -441,6 +442,9 @@ class LogCaptureFixture:\n     def clear(self) -> None:\n         \"\"\"Reset the list of log records and the captured log text.\"\"\"\n         self.handler.reset()\n+        self._item.stash[caplog_records_key][\n+            self._item.stash[caplog_when_key]\n+        ] = self.handler.records\n \n     def set_level(self, level: Union[int, str], logger: Optional[str] = None) -> None:\n         \"\"\"Set the level of a logger for the duration of a test.\n@@ -698,6 +702,7 @@ class LoggingPlugin:\n             report_handler.reset()\n             item.stash[caplog_records_key][when] = caplog_handler.records\n             item.stash[caplog_handler_key] = caplog_handler\n+            item.stash[caplog_when_key] = when\n \n             yield\n \n@@ -725,6 +730,7 @@ class LoggingPlugin:\n         yield from self._runtest_for(item, \"teardown\")\n         del item.stash[caplog_records_key]\n         del item.stash[caplog_handler_key]\n+        del item.stash[caplog_when_key]\n \n     @hookimpl\n     def pytest_runtest_logfinish(self) -> None:\ndiff --git a/testing/logging/test_fixture.py b/testing/logging/test_fixture.py\nindex bcb20de58..c52e08e72 100644\n--- a/testing/logging/test_fixture.py\n+++ b/testing/logging/test_fixture.py\n@@ -308,3 +308,19 @@ def test_log_report_captures_according_to_config_option_upon_failure(\n         [\"*Print message*\", \"*INFO log message*\", \"*WARNING log message*\"]\n     )\n     assert result.ret == 1\n+\n+\n+def test_caplog_get_records_consistent_with_records_after_clear(caplog):\n+    \"\"\"After caplog.clear(), get_records() should be consistent with caplog.records.\"\"\"\n+    caplog.set_level(logging.INFO)\n+\n+    assert caplog.get_records(\"call\") == caplog.records\n+    logger.info(\"test\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    caplog.clear()\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert caplog.get_records(\"call\") == []\n+\n+    logger.info(\"after clear\")\n+    assert caplog.get_records(\"call\") == caplog.records\n+    assert len(caplog.get_records(\"call\")) == 1\n"
+      }
+    }
+  ],
+  "trajectory_format": "mini-swe-agent-1.1"
+}
