@@ -1,8 +1,0 @@
-# Task: Review caplog.get_records / caplog.clear consistency fix
-
-## Round 1 findings:
-- Fix is correct: after handler.reset() creates a new list, the caplog_records_key entry is re-synced
-- New caplog_when_key StashKey tracks current phase for the re-sync
-- FLAGGED: caplog_when_key not cleaned up in pytest_runtest_teardown (line 731) unlike the other two stash keys
-- Test quality is good, covers the exact bug scenario
-- All 60 logging tests pass

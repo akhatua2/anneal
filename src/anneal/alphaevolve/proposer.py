@@ -96,7 +96,7 @@ def propose(
     gen_dir: Path,
     *,
     n_variants: int = 2,
-    model: str = "anthropic/claude-opus-4-6",
+    model: str = "anthropic/claude-sonnet-4-6",
 ) -> list[Variant]:
     """Ask the LLM to propose prompt mutations."""
     coder_yaml = elite.prompts.coder_yaml.read_text()

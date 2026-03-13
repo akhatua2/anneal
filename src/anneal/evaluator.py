@@ -218,7 +218,7 @@ def _build_judge_prompt(trace: dict) -> str:
     return "\n".join(parts)
 
 
-def judge(trace: dict, *, model: str = "anthropic/claude-opus-4-6") -> tuple[AgentScore, AgentScore]:
+def judge(trace: dict, *, model: str = "anthropic/claude-sonnet-4-6") -> tuple[AgentScore, AgentScore]:
     """Run the LLM judge on a trace. Returns coder and reviewer scores."""
     prompt = _build_judge_prompt(trace)
     logger.info(f"Judging trace ({len(prompt)} chars)...")
@@ -257,7 +257,7 @@ def evaluate(
     trace_path: str | Path,
     *,
     run_judge: bool = True,
-    judge_model: str = "anthropic/claude-opus-4-6",
+    judge_model: str = "anthropic/claude-sonnet-4-6",
 ) -> EvalResult:
     """Full evaluation: quantitative metrics + optional LLM judge.
 
