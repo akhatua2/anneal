@@ -13,10 +13,11 @@ dependencies = [
     "pytest>=9.0.2",
     "python-dotenv>=1.2.2",
     "swebench",
-    "swe-rex>=1.4.0",
+    "swe-rex",
     "boto3",
 ]
 
 [tool.uv.sources]
 mini-swe-agent = { path = "external/mini-swe-agent", editable = true }
 swebench = { path = "external/swe-bench", editable = true }
+swe-rex = { git = "https://github.com/SWE-agent/SWE-ReX.git", branch = "main" }

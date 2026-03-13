@@ -126,7 +126,7 @@ environment:
     TQDM_DISABLE: "1"
 
 model:
-  model_name: "anthropic/claude-sonnet-4-6"
+  model_name: "anthropic/claude-haiku-4-5"
   cost_tracking: "ignore_errors"
   model_kwargs:
     drop_params: true

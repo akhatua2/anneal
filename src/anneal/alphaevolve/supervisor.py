@@ -132,8 +132,8 @@ class Supervisor:
         max_workers: int = 20,
         max_elites: int = 3,
         migrate_every: int = 2,
-        propose_model: str = "anthropic/claude-sonnet-4-6",
-        judge_model: str = "anthropic/claude-sonnet-4-6",
+        propose_model: str = "anthropic/claude-haiku-4-5",
+        judge_model: str = "anthropic/claude-haiku-4-5",
     ):
         self.task_pool = task_pool
         self.experiments_dir = Path(experiments_dir)

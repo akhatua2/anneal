@@ -160,7 +160,7 @@ def propose(
     gen_dir: Path,
     *,
     n_variants: int = 2,
-    model: str = "anthropic/claude-sonnet-4-6",
+    model: str = "anthropic/claude-haiku-4-5",
 ) -> list[Variant]:
     """Ask the LLM to propose prompt mutations.
 
